@@ -1,0 +1,6 @@
+numpy
+matplotlib
+opencv-contrib-python
+noise
+tqdm
+scipy
