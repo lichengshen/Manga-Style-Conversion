@@ -1,3 +1,5 @@
+SCREENTONE_DIR = "./output/screentones_gen"
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -200,14 +202,18 @@ def generate_and_save_all(save_dir: str = "./screentones_gen"):
         )
         cv2.imwrite(f"{save_dir}/directional-noise_{thresh:.1f}.png", tone_img)
 
-
 def main():
     # show preview
     # preview_examples()
 
     # save full-res tones
-    generate_and_save_all("./screentones_gen")
+    generate_and_save_all(SCREENTONE_DIR)
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate screentone patterns.")
+    parser.add_argument("--screentone_dir", type=str, default=SCREENTONE_DIR, help="Directory to save generated screentones.")
+    args = parser.parse_args()
+    SCREENTONE_DIR = args.screentone_dir
     main()

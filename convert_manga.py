@@ -1,9 +1,9 @@
-IMAGE_PATH = "example.jpg"
-OUTPUT_PATH = "output.png"
+IMAGE_PATH = "./pictures/input_example1.jpg"
+OUTPUT_PATH = "./output/output.png"
 SCREENTONE_TYPES = ["dot", "grid", "sand-white", "line45", "directional-noise"]
 HISTOGRAM_EQUALIZATION = False
-SCREENTONE_DIR = "./screentones_gen"
-SCREENTONE_FEATURES_DIR = "./screentones_features"
+SCREENTONE_DIR = "./output/screentones_gen"
+SCREENTONE_FEATURES_DIR = "./output/screentones_features"
 TARGET_LONGEST_SIDE = 2000
 
 import os
@@ -242,4 +242,15 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Convert image to manga style using screentones.")
+    parser.add_argument("--input_image", type=str, default=IMAGE_PATH, help="Path to input image.")
+    parser.add_argument("--output_image", type=str, default=OUTPUT_PATH, help="Path to output image.")
+    parser.add_argument("--screentone_dir", type=str, default=SCREENTONE_DIR, help="Directory containing screentone images.")
+    parser.add_argument("--screentone_features_dir", type=str, default=SCREENTONE_FEATURES_DIR, help="Directory to save/load screentone features.")
+    args = parser.parse_args()
+    IMAGE_PATH = args.input_image
+    OUTPUT_PATH = args.output_image
+    SCREENTONE_DIR = args.screentone_dir
+    SCREENTONE_FEATURES_DIR = args.screentone_features_dir
     main()
