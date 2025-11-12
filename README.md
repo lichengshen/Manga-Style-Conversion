@@ -16,6 +16,15 @@ python convert_manga.py
 ```
 You can modify the parameters at the top of the `convert_manga.py`, including input/output file paths, screentone types to use and whether to apply histogram equalization.
 
+## Gradio Demo
+Run the Gradio script:
+```bash
+python run_gradio.py
+```
+The Gradio interactive interface looks like the following:
+
+![Gradio interface](pictures/gradio.png)
+
 ## Examples
 ### Example1
 NTU library:

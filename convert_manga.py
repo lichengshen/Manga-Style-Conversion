@@ -1,13 +1,25 @@
 IMAGE_PATH = "./pictures/input_example1.jpg"
 OUTPUT_PATH = "./output/output.png"
-SCREENTONE_TYPES = ["dot", "grid", "sand-white", "line45", "directional-noise"]
-HISTOGRAM_EQUALIZATION = False
 SCREENTONE_DIR = "./output/screentones_gen"
 SCREENTONE_FEATURES_DIR = "./output/screentones_features"
+SCREENTONE_TYPES = [
+    "dot",
+    "grid",
+    "sand-white",
+    "line0",
+    "line45",
+    "line90",
+    "line135",
+    "directional-noise",
+]
+HISTOGRAM_EQUALIZATION = False
+SOBEL_THRESH = 0.2
 TARGET_LONGEST_SIDE = 2000
 
 import os
 import glob
+from typing import Dict, List, Optional, Sequence, Tuple
+
 import cv2
 import numpy as np
 from tqdm import tqdm
@@ -58,15 +70,18 @@ def get_gabor_magnitudes(image: np.ndarray, gabor_filters):
         gabor_magnitudes.append(magnitude)
     return np.array(gabor_magnitudes)
 
-def load_screentones():
-    screentone_files = glob.glob(os.path.join(SCREENTONE_DIR, "*.png"))
-    screentone_type_to_files = {}
-    screentone_file_to_grayness = {}
+def load_screentones(
+    screentone_dir: str,
+    allowed_types: Sequence[str],
+) -> Tuple[Dict[str, List[str]], Dict[str, float]]:
+    screentone_files = glob.glob(os.path.join(screentone_dir, "*.png"))
+    screentone_type_to_files: Dict[str, List[str]] = {}
+    screentone_file_to_grayness: Dict[str, float] = {}
 
     for file in screentone_files:
         name = os.path.basename(file)
         type_name = name.split("_")[0]
-        if type_name not in SCREENTONE_TYPES:
+        if type_name not in allowed_types:
             continue
 
         screentone_type_to_files.setdefault(type_name, []).append(file)
@@ -77,18 +92,19 @@ def load_screentones():
     return screentone_type_to_files, screentone_file_to_grayness
 
 def get_screentone_features(
-    screentone_type_to_files: dict,
+    screentone_type_to_files: Dict[str, List[str]],
     gabor_filters,
+    features_dir: str,
 ):
-    os.makedirs(SCREENTONE_FEATURES_DIR, exist_ok=True)
+    os.makedirs(features_dir, exist_ok=True)
     screentone_types = list(screentone_type_to_files.keys())
     screentone_type_features = []
 
     for stype in screentone_types:
-        feature_path = os.path.join(SCREENTONE_FEATURES_DIR, f"{stype}.npy")
+        feature_path = os.path.join(features_dir, f"{stype}.npy")
 
         if os.path.exists(feature_path):
-            print(f"Loading features for {stype} from {SCREENTONE_FEATURES_DIR}")
+            print(f"Loading features for {stype} from {features_dir}")
             features = np.load(feature_path)
             screentone_type_features.append(features)
             continue
@@ -108,23 +124,27 @@ def get_screentone_features(
         features = features.mean(axis=0)
         screentone_type_features.append(features)
         np.save(feature_path, features)
-        print(f"Saved features for {stype} screentones to {SCREENTONE_FEATURES_DIR}")
+        print(f"Saved features for {stype} screentones to {features_dir}")
 
     screentone_type_features = np.array(screentone_type_features, dtype=np.float32)
     return screentone_types, screentone_type_features
 
-def load_and_preprocess_image(path: str):
+def load_and_preprocess_image(
+    path: str,
+    histogram_equalization: bool,
+    target_longest_side: int,
+):
     image = cv2.imread(path)
     if image is None:
         raise FileNotFoundError(f"Could not read image: {path}")
 
     longest_side = max(image.shape[:2])
-    scale = TARGET_LONGEST_SIDE / longest_side
+    scale = target_longest_side / longest_side
     new_w = int(image.shape[1] * scale)
     new_h = int(image.shape[0] * scale)
     image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
-    if HISTOGRAM_EQUALIZATION:
+    if histogram_equalization:
         ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
         y, cr, cb = cv2.split(ycrcb)
         y = cv2.equalizeHist(y)
@@ -189,14 +209,42 @@ def get_sobel_edges(image_bgr: np.ndarray) -> np.ndarray:
     sobel_magnitude = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
     return sobel_magnitude
 
-def main():
+
+def convert_to_manga(
+    input_path: str,
+    output_path: Optional[str] = None,
+    screentone_dir: str = SCREENTONE_DIR,
+    screentone_features_dir: str = SCREENTONE_FEATURES_DIR,
+    screentone_types: Optional[Sequence[str]] = None,
+    histogram_equalization: bool = HISTOGRAM_EQUALIZATION,
+    sobel_thresh: float = SOBEL_THRESH,
+    target_longest_side: int = TARGET_LONGEST_SIDE,
+):
+    if screentone_types is None:
+        screentone_types = SCREENTONE_TYPES
+    if not screentone_types:
+        raise ValueError("At least one screentone type must be selected.")
+
     gabor_filters = get_gabor_kernels()
-    screentone_type_to_files, screentone_file_to_grayness = load_screentones()    
-    screentone_types, screentone_type_features = get_screentone_features(
+    screentone_type_to_files, screentone_file_to_grayness = load_screentones(
+        screentone_dir,
+        screentone_types,
+    )
+    missing_types = [stype for stype in screentone_types if stype not in screentone_type_to_files]
+    if missing_types:
+        raise FileNotFoundError(
+            "Missing screentone assets for: " + ", ".join(missing_types)
+        )
+    screentone_types_ordered, screentone_type_features = get_screentone_features(
         screentone_type_to_files,
         gabor_filters,
+        screentone_features_dir,
     )
-    image = load_and_preprocess_image(IMAGE_PATH)
+    image = load_and_preprocess_image(
+        input_path,
+        histogram_equalization,
+        target_longest_side,
+    )
     labels, _ = segment_image(image)
     seg_to_pattern, _ = color_to_pattern_mapping(
         image,
@@ -216,7 +264,7 @@ def main():
 
         best_dist = np.inf
         best_file = None
-        pattern_name = screentone_types[pattern_idx]
+        pattern_name = screentone_types_ordered[pattern_idx]
 
         for file in screentone_type_to_files[pattern_name]:
             grayness = screentone_file_to_grayness[file]
@@ -234,23 +282,73 @@ def main():
     sobel_edges = (sobel_edges - sobel_edges.min()) / (
         sobel_edges.max() - sobel_edges.min()
     )
-    edge_mask = (sobel_edges < 0.2).astype(np.uint8) * 255
+    edge_mask = (sobel_edges < sobel_thresh).astype(np.uint8) * 255
     final = cv2.bitwise_and(output_image, edge_mask)
 
-    cv2.imwrite(OUTPUT_PATH, final)
-    print(f"Saved final image to {OUTPUT_PATH}")
+    if output_path is not None:
+        cv2.imwrite(output_path, final)
+        print(f"Saved final image to {output_path}")
+
+    return final
+
+def main():
+    convert_to_manga(
+        IMAGE_PATH,
+        output_path=OUTPUT_PATH,
+        screentone_dir=SCREENTONE_DIR,
+        screentone_features_dir=SCREENTONE_FEATURES_DIR,
+        screentone_types=SCREENTONE_TYPES,
+        histogram_equalization=HISTOGRAM_EQUALIZATION,
+        sobel_thresh=SOBEL_THRESH,
+        target_longest_side=TARGET_LONGEST_SIDE,
+    )
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Convert image to manga style using screentones.")
     parser.add_argument("--input_image", type=str, default=IMAGE_PATH, help="Path to input image.")
     parser.add_argument("--output_image", type=str, default=OUTPUT_PATH, help="Path to output image.")
     parser.add_argument("--screentone_dir", type=str, default=SCREENTONE_DIR, help="Directory containing screentone images.")
-    parser.add_argument("--screentone_features_dir", type=str, default=SCREENTONE_FEATURES_DIR, help="Directory to save/load screentone features.")
+    parser.add_argument(
+        "--screentone_features_dir",
+        type=str,
+        default=SCREENTONE_FEATURES_DIR,
+        help="Directory to save/load screentone features.",
+    )
+    parser.add_argument(
+        "--screentone_types",
+        nargs="*",
+        default=SCREENTONE_TYPES,
+        help="Subset of screentone types to use.",
+    )
+    parser.add_argument(
+        "--histogram_equalization",
+        action="store_true",
+        help="Enable histogram equalization before processing.",
+    )
+    parser.add_argument(
+        "--sobel_thresh",
+        type=float,
+        default=SOBEL_THRESH,
+        help="Threshold applied to Sobel edges (0-1).",
+    )
+    parser.add_argument(
+        "--target_longest_side",
+        type=int,
+        default=TARGET_LONGEST_SIDE,
+        help="Resize longest image side to this value before processing.",
+    )
     args = parser.parse_args()
-    IMAGE_PATH = args.input_image
-    OUTPUT_PATH = args.output_image
-    SCREENTONE_DIR = args.screentone_dir
-    SCREENTONE_FEATURES_DIR = args.screentone_features_dir
-    main()
+
+    convert_to_manga(
+        input_path=args.input_image,
+        output_path=args.output_image,
+        screentone_dir=args.screentone_dir,
+        screentone_features_dir=args.screentone_features_dir,
+        screentone_types=args.screentone_types,
+        histogram_equalization=args.histogram_equalization,
+        sobel_thresh=args.sobel_thresh,
+        target_longest_side=args.target_longest_side,
+    )

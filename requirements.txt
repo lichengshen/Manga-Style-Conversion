@@ -4,3 +4,4 @@ opencv-contrib-python
 noise
 tqdm
 scipy
+gradio
